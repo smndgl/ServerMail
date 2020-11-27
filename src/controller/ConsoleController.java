@@ -20,7 +20,6 @@ public class ConsoleController {
 
         txtLog.setOpacity(1);
         txtLog.setWrapText(true);
-        txtLog.setDisable(true);
         txtLog.textProperty().bind(model.LogProperty());
 
         /* TODO
