@@ -3,15 +3,14 @@ package model;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
+import javafx.beans.Observable;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.collections.ObservableMap;
 import javafx.util.Pair;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.lang.reflect.Type;
 import java.util.*;
 
@@ -24,50 +23,47 @@ public class DataModel {
     }
 
     public void consoleLog(String logLine) {
-        if(logProperty.get() == "")
+        if(logProperty.get().equals(""))
             this.logProperty.set("#"+this.row_line+" "+logLine);
         else
             this.logProperty.set(logProperty.get()+"\n#"+this.row_line+" "+logLine);
 
         row_line++;
     }
+
     //<editor-fold desc="Mailbox stuff">
-    public ObservableMap<String, Mailbox> mailboxes = FXCollections.emptyObservableMap();
+    public HashMap<String, ObservableList<Email>> mailboxes = new HashMap<>();
 
-    public ObservableMap<String, Mailbox> mailboxesProperty() {
-        return mailboxes;
+    public ArrayList<Email> getMailbox(String username) {
+        return new ArrayList<>(mailboxes.get(username));
     }
 
-    public void setMailboxValue(String username, Mailbox mb){
-        mailboxes.replace(username, mb);
+    public synchronized void initializeMailbox(String username, ArrayList<Email> inbox) {
+        mailboxes.replace(username, FXCollections.observableArrayList(inbox));
     }
 
-    public ArrayList<Email> getMailboxValue(String username, String filter) {
-        if(filter.equals("INBOX"))
-            return  mailboxesProperty().get(username).Inbox();
-        else if(filter.equals("SENT"))
-            return  mailboxesProperty().get(username).Sent();
-        else
-            consoleLog("?? HOW DO YOU GET IN THERE ?? (DataModel.java line: 51)");
-        return null; //hope won't pass here
+    public synchronized void detachMailbox(String username) {
+        mailboxes.replace(username, null);
+    }
+
+    public synchronized void addNewEmail(String username, Email email) {
+        mailboxes.get(username).add(email);
+    }
+
+    public synchronized void removeEmail(String username, Email email) {
+        for(int i = 0; i < mailboxes.get(username).size(); i++)
+            if(mailboxes.get(username).get(i).getId() == email.getId())
+                mailboxes.get(username).remove(i);
     }
 
     /*
      * I/O mailbox
      */
-    public Mailbox decodeMailbox(String username) {
-        return new Mailbox(
-                decodeSingleMailbox(username, "sent"),
-                decodeSingleMailbox(username, "inbox")
-        );
-    }
-
-    public ArrayList<Email> decodeSingleMailbox(String username, String mailbox) {
+    public ArrayList<Email> decodeInbox(String username) {
         ArrayList<Email> emails = new ArrayList<>();
         File f = new File(System.getProperty("user.dir")+
                 "/src/storage/"+ username + // account name
-                "_" +mailbox +                // choosen mailbox
-                ".json");
+                "_inbox.json");
         try {
             BufferedReader br = new BufferedReader(new FileReader(f));
             Type type = new TypeToken<List<Email>>(){}.getType();
@@ -80,6 +76,25 @@ public class DataModel {
 
         return emails;
     }
+
+    public String decodeSent(String username) {
+        String res = "";
+        File f = new File(System.getProperty("user.dir")+
+                "/src/storage/"+ username + // account name
+                "_sent.json");
+        try {
+            BufferedReader br = new BufferedReader(new FileReader(f));
+            String line;
+            while((line = br.readLine()) != null)
+                res += line;
+        }
+        catch (IOException | JsonSyntaxException e) {
+            e.printStackTrace();
+        }
+
+        return res;
+    }
+
     //</editor-fold>
 
     // <editor-fold desc="AccountList">
@@ -96,11 +111,10 @@ public class DataModel {
                 accountList.add(line);// fill map with <username, new Mailbox()>
             }
             consoleLog("Account list succesfully loaded!");
-            HashMap<String, Mailbox> map = new HashMap<>();
+
             for(String item : accountList) {
-                map.putIfAbsent(item, new Mailbox());
+                mailboxes.putIfAbsent(item, null);
             }
-            mailboxes = FXCollections.observableMap(map);
         }
         catch (IOException e) {
             consoleLog("Error while loading account list: "+ e.getMessage());
@@ -109,7 +123,11 @@ public class DataModel {
     }
 
     public Boolean usernameExists(String username) {
-        return accountList.contains(username);
+        return accountList.contains(username) && mailboxes.get(username) == null;
+    }
+
+    public Boolean isAuthenticated(String username) {
+        return mailboxes.get(username) != null;
     }
 
     // </editor-fold>
