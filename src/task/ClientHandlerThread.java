@@ -1,31 +1,35 @@
 package task;
 
 import com.google.gson.Gson;
-import controller.ConsoleController;
+import com.google.gson.reflect.TypeToken;
+import javafx.collections.ListChangeListener;
 import model.*;
 
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 
 public class ClientHandlerThread implements Runnable {
     private final Socket clientSocket;
-    private String username;
     private final DataModel model;
     private ObjectInputStream objectIn;
     private ObjectOutputStream objectOut;
     private String USERNAME;
+    private ArrayList<Email> sent;
+    private Boolean interruption = false;
 
-    private final String HEADER;
+    private String HEADER;
 
     public ClientHandlerThread(Socket clientSocket, DataModel model) {
         this.clientSocket = clientSocket;
         this.model = model;
-        this.HEADER = "ClientHandlerThread #"+ Thread.currentThread().getName();
+        this.HEADER = "";
+        this.sent = new ArrayList<>();
     }
 
     private Boolean isConnected(){
@@ -43,71 +47,137 @@ public class ClientHandlerThread implements Runnable {
             System.err.println("Disconnection exception: " + e.getMessage());
         }
     }
+    /*
+     * listener on inbox property for removing | adding an email
+     */
+    ListChangeListener<Email> emailListChangeListener = new ListChangeListener<Email>() {
+        @Override
+        public void onChanged(Change<? extends Email> c) {
+            //avvio scrittura su file
+            System.out.println("WHAT A FUCK IS GOINF ON HERE !!");
+            new Thread(new InputOutputOperation(USERNAME, "inbox", model.getMailbox(USERNAME), true)).start();
+            while(c.next()) {
+                try {
+                    if(c.wasAdded()) {
+                        model.consoleLog(HEADER + ": EMAIL RECEIVED");
+                        objectOut.writeObject(new Message<Email>(MessageType.sync, c.getAddedSubList().get(0)));
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    };
 
     @Override
     public void run() {
-        model.consoleLog(HEADER+" started: "+clientSocket);
+        model.consoleLog(" started connection: "+clientSocket);
         try {
             objectIn = new ObjectInputStream(clientSocket.getInputStream());
             objectOut = new ObjectOutputStream(clientSocket.getOutputStream());
-            while(isConnected()) {
+            while(isConnected() && !interruption) {
                 Object o = objectIn.readObject();
                 if(o instanceof Message) {
                     switch(((Message)o).getType()) {
                         case send -> {
-                            Message<Email> m = (Message) o;
-                            model.consoleLog(HEADER+":"+USERNAME+" has sent an email "+m.toString());
-                            /*TODO
-                             *  DESTINATARI --> controllo che l'instanza mail box dei destinatari non sia null:
-                             * - not_null: aggiungo le mail alla model.mailboxes(MapProperty) e al file
-                             * - null: aggiungo le mail (inbox) SOLO al file
-                             *  (map.property devo capire l'evento che si triggera aggiungendo un valore penso valuechange o qualcosa di simile)
-                             *  MITTENTE --> aggiungo al file (sent) la mail e alla model.mailboxes(MapProperty)
-                             */
+                            try {
+                                Message<Email> message = (Message) o;
+                                model.consoleLog(HEADER + ": EMAIL SENT");
+                                Email email = (Email)message.getContent();
+                                this.sent.add(email); //added email to sentbox
+                                new Thread(new InputOutputOperation(USERNAME, "sent", sent, true)).start(); //append to file
+
+                                for(String recipient : email.getRecipient()) {
+                                    if(model.isAuthenticated(recipient)) //foreach recipient add to propertylist
+                                        model.addNewEmail(recipient, email);
+                                    else
+                                        new Thread(new InputOutputOperation(recipient, "inbox", email, false)).start();
+                                }
+                            }
+                            catch (ClassCastException e) {
+                                System.err.println(HEADER +" throw error: "+e.getMessage());
+                            }
                         }
                         case fetch -> {
                             try {
-                                Message<String> m = (Message) o;
-                                model.consoleLog(HEADER+": fetch request from "+ USERNAME +" "+m.toString());
-                                ArrayList<Email> selected = model.getMailboxValue(USERNAME, m.getContent());
-                                objectOut.writeObject(
-                                        new Message<String>(MessageType.fetch,
-                                                new Gson().toJson(selected)
-                                        )
-                                );
-                                // mandato json con inbox/sent allo specifico USERNAMEm
+                                Message<String> message = (Message) o;
+                                model.consoleLog(HEADER+": FETCH REQUEST");
+                                if(message.getContent().equals("INBOX")) {
+                                    objectOut.writeObject(
+                                            new Message<String>(MessageType.fetch,
+                                                    new Gson().toJson(model.getMailbox(USERNAME))
+                                            )
+                                    );
+                                }
+                                else if(message.getContent().equals("SENT")) {
+                                    String sent_json = model.decodeSent(USERNAME);
+                                    this.sent = new Gson().fromJson(sent_json, new TypeToken<Collection<Email>>(){}.getType());
+                                    objectOut.writeObject(new Message<String>(MessageType.fetch, sent_json));
+                                }
+                                // mandato json con inbox/sent allo specifico USERNAME
                             }
                             catch(ClassCastException e) {
                                 e.printStackTrace();
                             }
                         }
-                        case delete -> {
+                        case delete_i -> {
+                            Message<Email> message = (Message) o;
+                            model.removeEmail(USERNAME, message.getContent()); //change event wont trigger
+                            model.consoleLog(HEADER+": DELETE FROM INBOX");
+                        }
+                        case delete_s -> {
+                            Message<Email> message = (Message) o;
+                            Email tbd = message.getContent();
 
+                            for(int i = 0; i < sent.size(); i++)
+                                if(sent.get(i).getId() == tbd.getId())
+                                    sent.remove(i);
+
+                            new Thread(new InputOutputOperation(USERNAME, "sent", sent, true)).start(); //append to file
+                            model.consoleLog(HEADER+": DELETE FROM SENT");
                         }
                         case login -> {
-                            /*
-                             *
-                             */
-                            Message<String> m = (Message) o;
-                            this.USERNAME = m.getContent();
-                            model.consoleLog(HEADER+": "+m.toString());
-                            objectOut.writeObject(new Message<>(MessageType.login, model.usernameExists(USERNAME)));
-                            Mailbox mb = model.decodeMailbox(USERNAME);
-                            model.mailboxesProperty().replace(USERNAME, mb); //TODO ? semaforo --> SI CAZZO prima mandano?
-                            model.consoleLog(HEADER+": loaded mailbox for "+ USERNAME);
+                            Message<String> message = (Message) o;
+                            this.USERNAME = message.getContent();
+                            this.HEADER = "ClientHandler["+USERNAME+"]";
+                            Thread.currentThread().setName("ClientHandler["+USERNAME+"]");
+                            Boolean res = model.usernameExists(USERNAME);
+                            objectOut.writeObject(new Message<>(MessageType.login, res));
+                            if(res) {
+                                model.consoleLog(HEADER + ": LOGIN");
+
+                                model.initializeMailbox(USERNAME, model.decodeInbox(USERNAME));
+                                // listener for observable list inbox
+                                model.mailboxes.get(USERNAME).addListener(emailListChangeListener);
+                                model.consoleLog(HEADER + ": MAILBOXES LOADED");
+                            }
+                            else {
+                                model.consoleLog("TRY AGAIN DUDE, I BELIEVE IN YOU <3");
+                            }
+                        }
+                        case logout -> {
+                            Message<String> message = (Message) o;
+                            this.USERNAME = message.getContent();
+                            model.consoleLog(HEADER+": LOGOUT");
+
+
+                            model.mailboxes.get(USERNAME).removeListener(emailListChangeListener);
+                            model.detachMailbox(USERNAME); //il client si è sloggato, setto a null la sua mailbox
+                            this.interruption = true;
                         }
                     }
                 }
             }
-            close();
         }
-        catch (IOException e) {
+        catch (IOException | ClassNotFoundException e) { //quando chiudo client erro null a cazzo
             model.consoleLog(HEADER+" Error:"+ e.getMessage());
-            e.printStackTrace();
+            System.err.println(HEADER+ "Error: "+ e.getMessage());
         }
-        catch (ClassNotFoundException e) {
-            model.consoleLog(HEADER+" Error:"+ e.getMessage());
-            e.printStackTrace();
+        catch (NullPointerException e) {
+            if(!isConnected())
+                this.close();
         }
+
+        close();
     }
 }
