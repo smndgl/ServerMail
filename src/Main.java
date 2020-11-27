@@ -50,24 +50,20 @@ public class Main extends Application {
          * loading
          */
 
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-               while (!INTERRUPTION) {
-                   try {
-                       Socket clientSocket = null;
-                       clientSocket = serverSocket.accept();
-                       poolExecutor.execute(new ClientHandlerThread(clientSocket, model));
-                   }
-                   catch(IOException e) {
-                       model.consoleLog("serverSocket.accept() failed: "+ e.getMessage());
-                       System.exit(0);
-                   }
+        new Thread(() -> {
+           while (!INTERRUPTION) {
+               try {
+                   Socket clientSocket = null;
+                   clientSocket = serverSocket.accept();
+                   poolExecutor.execute(new ClientHandlerThread(clientSocket, model));
                }
-            }
+               catch(IOException e) {
+                   model.consoleLog("serverSocket.accept() failed: "+ e.getMessage());
+                   System.exit(0);
+               }
+           }
         }).start();
     }
-
 
     public static void main(String[] args) {
         launch(args);
