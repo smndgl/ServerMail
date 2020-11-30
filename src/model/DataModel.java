@@ -47,6 +47,8 @@ public class DataModel {
     }
 
     public synchronized void addNewEmail(String username, Email email) {
+        int new_id = mailboxes.get(username).get(mailboxes.get(username).size()-1).getId();
+        email.setId(new_id);
         mailboxes.get(username).add(email);
     }
 
@@ -68,6 +70,8 @@ public class DataModel {
             BufferedReader br = new BufferedReader(new FileReader(f));
             Type type = new TypeToken<List<Email>>(){}.getType();
             emails = new Gson().fromJson(br, type);
+            if(emails == null)
+                emails = new ArrayList<>();
         }
         catch (IOException | JsonSyntaxException e) {
             e.printStackTrace();

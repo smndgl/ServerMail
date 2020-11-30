@@ -83,16 +83,29 @@ public class ClientHandlerThread implements Runnable {
                         case send -> {
                             try {
                                 Message<Email> message = (Message) o;
-                                model.consoleLog(HEADER + ": EMAIL SENT");
                                 Email email = (Email)message.getContent();
-                                this.sent.add(email); //added email to sentbox
-                                new Thread(new InputOutputOperation(USERNAME, "sent", sent, true)).start(); //append to file
-
+                                String res = "";
                                 for(String recipient : email.getRecipient()) {
-                                    if(model.isAuthenticated(recipient)) //foreach recipient add to propertylist
-                                        model.addNewEmail(recipient, email);
-                                    else
-                                        new Thread(new InputOutputOperation(recipient, "inbox", email, false)).start();
+                                    if(!model.usernameExists(recipient)) {
+                                        res += "unknown address: "+ recipient+" ";
+                                    }
+                                }
+
+                                if(res.equals("")) {
+                                    this.sent.add(email); //added email to sentbox
+                                    new Thread(new InputOutputOperation(USERNAME, "sent", sent, true)).start(); //append to file
+
+                                    for (String recipient : email.getRecipient()) {
+                                        if (model.isAuthenticated(recipient)) //foreach recipient add to propertylist
+                                            model.addNewEmail(recipient, email);
+                                        else
+                                            new Thread(new InputOutputOperation(recipient, "inbox", email, false)).start();
+                                    }
+                                    model.consoleLog(HEADER + ": EMAIL SENT");
+                                    objectOut.writeObject(new Message<String>(MessageType.send, "Email sent"));
+                                }
+                                else { //mandare indietro unknown address
+                                    objectOut.writeObject(new Message<String>(MessageType.send, "Error:"+ res));
                                 }
                             }
                             catch (ClassCastException e) {
