@@ -22,7 +22,7 @@ public class DataModel {
         return logProperty;
     }
 
-    public void consoleLog(String logLine) {
+    public synchronized void consoleLog(String logLine) {
         if(logProperty.get().equals(""))
             this.logProperty.set("#"+this.row_line+" "+logLine);
         else

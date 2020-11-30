@@ -7,5 +7,6 @@ public enum  MessageType {
     sync,  //server sends sync msg for advise client of a new email
     login, //username check and login
     logout, //remove mailboxes from runtime memory of server
-    fetch //mailboxes retrieving from thread Sync
+    fetch, //mailboxes retrieving from thread Sync
+    reconnect
 }

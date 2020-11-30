@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import javafx.collections.ListChangeListener;
 import model.*;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -136,30 +137,36 @@ public class ClientHandlerThread implements Runnable {
                             new Thread(new InputOutputOperation(USERNAME, "sent", sent, true)).start(); //append to file
                             model.consoleLog(HEADER+": DELETE FROM SENT");
                         }
-                        case login -> {
+                        case login, reconnect -> {
                             Message<String> message = (Message) o;
                             this.USERNAME = message.getContent();
                             this.HEADER = "ClientHandler["+USERNAME+"]";
                             Thread.currentThread().setName("ClientHandler["+USERNAME+"]");
-                            Boolean res = model.usernameExists(USERNAME);
-                            objectOut.writeObject(new Message<>(MessageType.login, res));
-                            if(res) {
-                                model.consoleLog(HEADER + ": LOGIN");
+                            if(message.getType() == MessageType.login) {
+                                Boolean res = model.usernameExists(USERNAME);
+                                objectOut.writeObject(new Message<>(MessageType.login, res));
+                                if (res) {
+                                    model.consoleLog(HEADER + ": LOGIN");
 
-                                model.initializeMailbox(USERNAME, model.decodeInbox(USERNAME));
-                                // listener for observable list inbox
-                                model.mailboxes.get(USERNAME).addListener(emailListChangeListener);
-                                model.consoleLog(HEADER + ": MAILBOXES LOADED");
+                                    model.initializeMailbox(USERNAME, model.decodeInbox(USERNAME));
+                                    // listener for observable list inbox
+                                    model.mailboxes.get(USERNAME).addListener(emailListChangeListener);
+                                    model.consoleLog(HEADER + ": MAILBOXES LOADED");
+                                } else {
+                                    model.consoleLog("TRY AGAIN DUDE, I BELIEVE IN YOU <3");
+                                }
                             }
                             else {
-                                model.consoleLog("TRY AGAIN DUDE, I BELIEVE IN YOU <3");
+                                model.consoleLog(HEADER + "RECONNECTION REQUEST");
+                                model.initializeMailbox(USERNAME, model.decodeInbox(USERNAME));
+                                model.mailboxes.get(USERNAME).addListener(emailListChangeListener);
+                                model.consoleLog(HEADER + ": MAILBOXES LOADED");
                             }
                         }
                         case logout -> {
                             Message<String> message = (Message) o;
                             this.USERNAME = message.getContent();
                             model.consoleLog(HEADER+": LOGOUT");
-
 
                             model.mailboxes.get(USERNAME).removeListener(emailListChangeListener);
                             model.detachMailbox(USERNAME); //il client si è sloggato, setto a null la sua mailbox
@@ -170,14 +177,19 @@ public class ClientHandlerThread implements Runnable {
             }
         }
         catch (IOException | ClassNotFoundException e) { //quando chiudo client erro null a cazzo
-            model.consoleLog(HEADER+" Error:"+ e.getMessage());
-            System.err.println(HEADER+ "Error: "+ e.getMessage());
+            if(e instanceof EOFException) {
+                model.detachMailbox(USERNAME);
+            }
+            else {
+                model.consoleLog(HEADER + " Error:" + e.getMessage());
+                System.err.println(HEADER + "Error: " + e.getMessage());
+            }
         }
         catch (NullPointerException e) {
             if(!isConnected())
                 this.close();
         }
 
-        close();
+        this.close();
     }
 }
