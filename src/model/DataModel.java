@@ -3,16 +3,20 @@ package model;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
-import javafx.beans.Observable;
-import javafx.beans.property.*;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.collections.ObservableMap;
-import javafx.util.Pair;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.lang.reflect.Type;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 
 public class DataModel {
     private final StringProperty logProperty = new SimpleStringProperty("");
@@ -47,7 +51,7 @@ public class DataModel {
     }
 
     public synchronized void addNewEmail(String username, Email email) {
-        int new_id = mailboxes.get(username).get(mailboxes.get(username).size()-1).getId();
+        int new_id = mailboxes.get(username).size() > 0 ? mailboxes.get(username).get(mailboxes.get(username).size()-1).getId() : 1;
         email.setId(new_id);
         mailboxes.get(username).add(email);
     }
@@ -127,7 +131,7 @@ public class DataModel {
     }
 
     public Boolean usernameExists(String username) {
-        return accountList.contains(username) && mailboxes.get(username) == null;
+        return accountList.contains(username);
     }
 
     public Boolean isAuthenticated(String username) {

@@ -3,16 +3,17 @@ package task;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import javafx.collections.ListChangeListener;
-import model.*;
+import model.DataModel;
+import model.Email;
+import model.Message;
+import model.MessageType;
 
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.sql.Connection;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 
 public class ClientHandlerThread implements Runnable {
@@ -55,7 +56,6 @@ public class ClientHandlerThread implements Runnable {
         @Override
         public void onChanged(Change<? extends Email> c) {
             //avvio scrittura su file
-            System.out.println("WHAT A FUCK IS GOINF ON HERE !!");
             new Thread(new InputOutputOperation(USERNAME, "inbox", model.getMailbox(USERNAME), true)).start();
             while(c.next()) {
                 try {
